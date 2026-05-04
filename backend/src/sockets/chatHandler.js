@@ -1,4 +1,6 @@
 const db = require('../config/db');
+const { producer } = require('../config/kafka');
+const { client: redis } = require('../config/redis');
 const jwt = require('jsonwebtoken');
 
 module.exports = function(io) {
@@ -60,27 +62,32 @@ module.exports = function(io) {
       const { chatId, content, media_url } = data;
       const senderId = socket.user.id;
       
+      const newMessage = {
+        chat_id: chatId,
+        sender_id: senderId,
+        content,
+        media_url,
+        sender_username: socket.user.username,
+        created_at: new Date(),
+        eventType: 'SEND_MESSAGE'
+      };
+
+      // 1. Emit to clients immediately for real-time feel
+      io.to(chatId.toString()).emit('receive_message', newMessage);
+
+      // 2. Push to Kafka for background persistence
       try {
-        // Save to DB
-        const [result] = await db.query(
+        await producer.send({
+          topic: 'chat-messages',
+          messages: [{ value: JSON.stringify(newMessage) }]
+        });
+      } catch (err) {
+        console.error('Kafka Send Error (Falling back to direct DB):', err);
+        // Fallback for dev environment without Kafka
+        await db.query(
           'INSERT INTO Messages (chat_id, sender_id, content, media_url) VALUES (?, ?, ?, ?)',
           [chatId, senderId, content, media_url]
         );
-
-        const newMessage = {
-          id: result.insertId,
-          chat_id: chatId,
-          sender_id: senderId,
-          content,
-          media_url,
-          sender_username: socket.user.username,
-          created_at: new Date()
-        };
-
-        // Broadcast to everyone in room including sender
-        io.to(chatId.toString()).emit('receive_message', newMessage);
-      } catch (err) {
-        console.error('Error saving message:', err);
       }
     });
 

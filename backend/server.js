@@ -10,8 +10,12 @@ const adminRoutes = require('./src/routes/adminRoutes');
 const friendRoutes = require('./src/routes/friendRoutes');
 const postRoutes = require('./src/routes/postRoutes');
 const chatHandler = require('./src/sockets/chatHandler');
+const { connectRedis } = require('./src/config/redis');
+const { connectKafka } = require('./src/config/kafka');
 
 const app = express();
+connectRedis();
+connectKafka();
 app.use(cors());
 app.use(express.json());
 
