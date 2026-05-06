@@ -6,17 +6,24 @@ const logFile = path.join(__dirname, '../../error.log');
 
 exports.createPost = async (req, res) => {
   try {
-    const { content, image_url } = req.body;
+    const { content } = req.body;
     const userId = req.user.id;
+    
+    // Check if an image was uploaded
+    let finalImageUrl = req.body.image_url || null;
+    if (req.file) {
+      finalImageUrl = `/uploads/${req.file.filename}`;
+    }
     
     const [result] = await db.execute(
       'INSERT INTO Posts (user_id, content, image_url, created_at) VALUES (?, ?, ?, NOW())',
-      [userId, content || '', image_url || null]
+      [userId, content || '', finalImageUrl]
     );
     
     res.status(201).json({ 
       id: result.insertId, 
-      message: 'Post created successfully' 
+      message: 'Post created successfully',
+      image_url: finalImageUrl
     });
   } catch (error) {
     console.error('Post creation error:', error);

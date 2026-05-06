@@ -13,15 +13,15 @@ async function runWorker() {
   await consumer.run({
     eachMessage: async ({ topic, partition, message }) => {
       const data = JSON.parse(message.value.toString());
-      const { chatId, senderId, content, media_url, eventType } = data;
+      const { chat_id, sender_id, content, media_url, eventType } = data;
 
       try {
         if (eventType === 'SEND_MESSAGE') {
           await db.query(
             'INSERT INTO Messages (chat_id, sender_id, content, media_url) VALUES (?, ?, ?, ?)',
-            [chatId, senderId, content, media_url]
+            [chat_id, sender_id, content, media_url]
           );
-          console.log(`[Worker] Saved message for chat ${chatId}`);
+          console.log(`[Worker] Saved message for chat ${chat_id}`);
         }
       } catch (err) {
         console.error('[Worker] Error processing message:', err);

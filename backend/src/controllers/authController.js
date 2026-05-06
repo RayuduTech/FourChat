@@ -20,7 +20,7 @@ exports.register = async (req, res) => {
 
     const token = jwt.sign({ id: result.insertId, username }, process.env.JWT_SECRET, { expiresIn: '7d' });
     
-    res.status(201).json({ token, user: { id: result.insertId, username, email } });
+    res.status(201).json({ token, user: { id: result.insertId, username, email, profile_pic: null, bio: null, status: 'offline' } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -46,7 +46,7 @@ exports.login = async (req, res) => {
     // Update status to online
     await db.query('UPDATE Users SET status = ? WHERE id = ?', ['online', user.id]);
 
-    res.json({ token, user: { id: user.id, username: user.username, email: user.email } });
+    res.json({ token, user: { id: user.id, username: user.username, email: user.email, profile_pic: user.profile_pic, bio: user.bio, status: 'online' } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -57,7 +57,7 @@ exports.searchUsers = async (req, res) => {
   try {
     if (!q) return res.json([]);
     const [users] = await db.query(
-      `SELECT u.id, u.username, u.status, f.status as friendship_status, f.sender_id
+      `SELECT u.id, u.username, u.status, u.profile_pic, f.status as friendship_status, f.sender_id
        FROM Users u
        LEFT JOIN Friendships f ON (
          (u.id = f.user_id1 AND f.user_id2 = ?) OR 
@@ -87,13 +87,37 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.updateProfile = async (req, res) => {
-  const { bio, profile_pic } = req.body;
+  const { username, bio } = req.body;
+  const userId = req.user.id;
   try {
+    let finalProfilePic = req.body.profile_pic;
+    if (req.file) {
+      finalProfilePic = `/uploads/${req.file.filename}`;
+    }
+
+    // If username is changing, check for uniqueness
+    if (username && username !== req.user.username) {
+      const [existing] = await db.query('SELECT id FROM Users WHERE username = ? AND id != ?', [username, userId]);
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+    }
+
     await db.query(
-      'UPDATE Users SET bio = ?, profile_pic = ? WHERE id = ?',
-      [bio, profile_pic, req.user.id]
+      'UPDATE Users SET username = COALESCE(?, username), bio = COALESCE(?, bio), profile_pic = COALESCE(?, profile_pic) WHERE id = ?',
+      [username, bio, finalProfilePic, userId]
     );
-    res.json({ message: 'Profile updated successfully' });
+
+    // Fetch the full updated user to return to the client
+    const [updatedUsers] = await db.query(
+      'SELECT id, username, email, bio, profile_pic, status FROM Users WHERE id = ?',
+      [userId]
+    );
+    
+    res.json({ 
+      message: 'Profile updated successfully',
+      user: updatedUsers[0]
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

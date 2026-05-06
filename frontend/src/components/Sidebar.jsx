@@ -13,12 +13,25 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
   const [friends, setFriends] = useState([]);
   const [activeTab, setActiveTab] = useState('chats'); // 'chats', 'requests', 'friends' or 'feed'
   const [profileModal, setProfileModal] = useState({ isOpen: false, userId: null, isOwn: false });
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [groupName, setGroupName] = useState('');
+
+  const getBaseUrl = () => {
+    return import.meta.env.VITE_API_URL.replace('/api', '');
+  };
 
   useEffect(() => {
     fetchChats();
     fetchPendingRequests();
     fetchFriends();
   }, [socket]);
+
+  useEffect(() => {
+    if (showGroupModal) {
+      fetchFriends();
+    }
+  }, [showGroupModal]);
 
   useEffect(() => {
     if (!socket) return;
@@ -94,8 +107,15 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
   const startChat = async (otherUserId) => {
     try {
       const res = await api.post('/chats', { otherUserId });
-      if (socket) socket.emit('join_room', res.data.id);
+      const newChat = res.data;
+      if (socket) socket.emit('join_room', newChat.id);
+      
+      // Refresh chats and select the new one
       fetchChats();
+      setCurrentChat(newChat);
+      setActiveTab('chats');
+      setView('chat');
+      
       setSearchQuery('');
       setSearchResults([]);
     } catch (err) {
@@ -132,12 +152,38 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
     }
   };
 
+  const handleCreateGroup = async () => {
+    if (!groupName || selectedMembers.length === 0) return;
+    try {
+      const res = await api.post('/chats/groups', { groupName, memberIds: selectedMembers });
+      setShowGroupModal(false);
+      setGroupName('');
+      setSelectedMembers([]);
+      fetchChats();
+      setCurrentChat(res.data);
+      setActiveTab('chats');
+      setView('chat');
+    } catch (err) {
+      console.error('Error creating group', err);
+    }
+  };
+
+  const toggleMember = (id) => {
+    setSelectedMembers(prev => 
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
+
   return (
     <div className="sidebar glass-panel">
       <div className="sidebar-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <div className="avatar clickable" onClick={() => setProfileModal({ isOpen: true, userId: user.id, isOwn: true })}>
-            {user?.username?.[0]?.toUpperCase()}
+            {user?.profile_pic ? (
+              <img src={`${getBaseUrl()}${user.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              user?.username?.[0]?.toUpperCase()
+            )}
             <div className="status-dot online"></div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -176,8 +222,12 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
             <h4 style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '1rem 0 0.5rem 1rem', textTransform: 'uppercase' }}>Users</h4>
             {searchResults.map(u => (
               <div key={u.id} className="chat-item">
-                <div className="avatar" style={{ background: 'var(--bg-input)', fontSize: '1rem' }}>
-                  {u.username[0].toUpperCase()}
+                <div className="avatar">
+                  {u.profile_pic ? (
+                    <img src={`${getBaseUrl()}${u.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    u.username[0].toUpperCase()
+                  )}
                 </div>
                 <div className="chat-info">
                   <div className="chat-name">{u.username}</div>
@@ -233,6 +283,14 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
           </button>
         </div>
 
+        {activeTab === 'chats' && !searchQuery && (
+          <div style={{ padding: '0.5rem 1rem' }}>
+            <button className="btn-secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }} onClick={() => setShowGroupModal(true)}>
+              <Users size={18} /> New Group
+            </button>
+          </div>
+        )}
+
         {activeTab === 'requests' && !searchQuery && (
           <div className="requests-list">
             {pendingRequests.length === 0 ? (
@@ -272,10 +330,14 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
                 <p>No friends yet</p>
               </div>
             ) : (
-              friends.map(friend => (
+               friends.map(friend => (
                 <div key={friend.id} className="chat-item" onClick={() => startChat(friend.id)}>
                   <div className="avatar">
-                    {friend.username[0].toUpperCase()}
+                    {friend.profile_pic ? (
+                      <img src={`${getBaseUrl()}${friend.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    ) : (
+                      friend.username[0].toUpperCase()
+                    )}
                     <div className={`status-dot ${friend.status === 'online' ? 'online' : 'offline'}`}></div>
                   </div>
                   <div className="chat-info">
@@ -283,7 +345,14 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
                     <div className="chat-preview">{friend.status === 'online' ? 'Online' : 'Offline'}</div>
                   </div>
                   <div className="chat-actions">
-                    <button className="icon-btn" title="Message">
+                    <button 
+                      className="icon-btn" 
+                      title="Message"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startChat(friend.id);
+                      }}
+                    >
                       <MessageSquare size={18} />
                     </button>
                   </div>
@@ -308,7 +377,15 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
                   onClick={() => setCurrentChat(chat)}
                 >
                   <div className="avatar">
-                    {chat.is_group ? 'G' : chat.other_username?.[0]?.toUpperCase()}
+                    {chat.is_group ? (
+                      chat.group_pic ? (
+                        <img src={`${getBaseUrl()}${chat.group_pic}`} alt="Group" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : chat.group_name?.[0]?.toUpperCase()
+                    ) : (
+                      chat.other_profile_pic ? (
+                        <img src={`${getBaseUrl()}${chat.other_profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : chat.other_username?.[0]?.toUpperCase()
+                    )}
                     {!chat.is_group && (
                       <div className={`status-dot ${chat.other_status === 'online' ? 'online' : 'offline'}`}></div>
                     )}
@@ -335,6 +412,58 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
         userId={profileModal.userId}
         isOwnProfile={profileModal.isOwn}
       />
+
+      {showGroupModal && (
+        <div className="modal-overlay" onClick={() => setShowGroupModal(false)}>
+          <div className="modal-content glass-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>Create New Group</h3>
+              <button className="icon-btn" onClick={() => setShowGroupModal(false)}><X size={20} /></button>
+            </div>
+
+            <div className="form-group">
+              <label>Group Name</label>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Enter group name..." 
+                value={groupName}
+                onChange={e => setGroupName(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Select Members</label>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '0.5rem', padding: '0.5rem' }}>
+                {friends.map(friend => (
+                  <div 
+                    key={friend.id} 
+                    className={`chat-item ${selectedMembers.includes(friend.id) ? 'active' : ''}`}
+                    onClick={() => toggleMember(friend.id)}
+                    style={{ padding: '0.5rem', borderRadius: '0.25rem', marginBottom: '0.25rem' }}
+                  >
+                    <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>
+                      {friend.profile_pic ? (
+                        <img src={`${getBaseUrl()}${friend.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        friend.username[0].toUpperCase()
+                      )}
+                    </div>
+                    <div className="chat-info">
+                      <div className="chat-name" style={{ fontSize: '0.9rem' }}>{friend.username}</div>
+                    </div>
+                    {selectedMembers.includes(friend.id) && <Check size={16} color="var(--primary)" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button className="btn-primary" style={{ width: '100%', marginTop: '1rem' }} onClick={handleCreateGroup} disabled={!groupName || selectedMembers.length === 0}>
+              Create Group
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

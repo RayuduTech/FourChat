@@ -9,13 +9,28 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // If we have a token, we could optionally verify it here with an API call
-    // For now, we'll just parse the user data if stored in localStorage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser && token) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const initializeAuth = async () => {
+      const storedToken = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      
+      if (storedToken && storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser); // Set immediately for fast UI
+        
+        // Then fetch fresh profile from API to get latest profile_pic etc.
+        try {
+          const res = await api.get(`/auth/profile/${parsedUser.id}`);
+          const freshUser = { ...parsedUser, ...res.data };
+          localStorage.setItem('user', JSON.stringify(freshUser));
+          setUser(freshUser);
+        } catch (err) {
+          console.error('Failed to refresh profile', err);
+        }
+      }
+      setLoading(false);
+    };
+    
+    initializeAuth();
   }, [token]);
 
   const login = async (email, password) => {
@@ -41,8 +56,14 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateUser = (updatedUser) => {
+    const newUser = { ...user, ...updatedUser };
+    localStorage.setItem('user', JSON.stringify(newUser));
+    setUser(newUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

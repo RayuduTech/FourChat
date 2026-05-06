@@ -15,6 +15,9 @@ const Feed = ({ socket }) => {
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState({}); // { postId: [comments] }
   const { user } = useAuth();
+  const getBaseUrl = () => {
+    return import.meta.env.VITE_API_URL.replace('/api', '');
+  };
 
   useEffect(() => {
     fetchPosts();
@@ -46,24 +49,28 @@ const Feed = ({ socket }) => {
     e.preventDefault();
     if (!content.trim() && !imageUrl) return;
 
-    const timeoutId = setTimeout(() => {
-      setLoading(false);
-      toast.error('Request timed out. Please try again.');
-    }, 10000);
-
     try {
       setLoading(true);
-      await api.post('/social', { content, image_url: imageUrl || null });
-      clearTimeout(timeoutId);
+      const formData = new FormData();
+      formData.append('content', content);
+      if (imageUrl && typeof imageUrl !== 'string') {
+        formData.append('image', imageUrl);
+      } else if (imageUrl) {
+        formData.append('image_url', imageUrl);
+      }
+
+      await api.post('/social', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      
       setContent('');
       setImageUrl('');
       fetchPosts();
       if (socket) socket.emit('new_post', { sender: user.username });
       toast.success('Post shared!');
     } catch (err) {
-      clearTimeout(timeoutId);
       console.error('Error creating post', err);
-      toast.error(err.response?.data?.error || 'Failed to post. Check your connection.');
+      toast.error(err.response?.data?.error || 'Failed to post.');
     } finally {
       setLoading(false);
     }
@@ -107,20 +114,10 @@ const Feed = ({ socket }) => {
     }
   };
 
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await api.post('/chats/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      setImageUrl(res.data.url);
-    } catch (err) {
-      console.error('Image upload failed', err);
-    }
+    setImageUrl(file); // Set the file object for later upload
   };
 
   return (
@@ -135,7 +132,10 @@ const Feed = ({ socket }) => {
           />
           {imageUrl && (
             <div className="post-preview-img">
-              <img src={`http://localhost:5000${imageUrl}`} alt="preview" />
+              <img 
+                src={typeof imageUrl === 'string' ? `${getBaseUrl()}${imageUrl}` : URL.createObjectURL(imageUrl)} 
+                alt="preview" 
+              />
               <button type="button" onClick={() => setImageUrl('')} className="remove-img">×</button>
             </div>
           )}
@@ -178,7 +178,7 @@ const Feed = ({ socket }) => {
             <div className="post-content">
               <p>{post.content}</p>
               {post.image_url && (
-                <img src={`http://localhost:5000${post.image_url}`} alt="post" className="post-img" />
+                <img src={`${getBaseUrl()}${post.image_url}`} alt="post" className="post-img" />
               )}
             </div>
             <div className="post-footer">

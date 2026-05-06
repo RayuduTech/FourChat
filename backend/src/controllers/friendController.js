@@ -73,14 +73,23 @@ exports.respondToRequest = async (req, res) => {
 exports.getFriends = async (req, res) => {
   const userId = req.user.id;
   try {
+    // Return users who are either:
+    // 1. Accepted friends in the Friendships table
+    // 2. People the user has an active 1-on-1 chat with
     const [friends] = await db.query(`
-      SELECT u.id, u.username, u.email, u.status, u.last_seen 
+      SELECT DISTINCT u.id, u.username, u.email, u.status, u.last_seen, u.profile_pic
       FROM Users u
-      JOIN Friendships f ON (u.id = f.user_id1 OR u.id = f.user_id2)
-      WHERE (f.user_id1 = ? OR f.user_id2 = ?) 
-      AND f.status = 'accepted'
+      LEFT JOIN Friendships f ON (u.id = f.user_id1 OR u.id = f.user_id2)
+      LEFT JOIN Chat_Participants cp1 ON u.id = cp1.user_id
+      LEFT JOIN Chat_Participants cp2 ON cp1.chat_id = cp2.chat_id AND cp2.user_id = ?
+      LEFT JOIN Chats c ON cp1.chat_id = c.id
+      WHERE (
+        (f.status = 'accepted' AND (f.user_id1 = ? OR f.user_id2 = ?))
+        OR 
+        (c.is_group = false AND cp2.user_id IS NOT NULL)
+      )
       AND u.id != ?
-    `, [userId, userId, userId]);
+    `, [userId, userId, userId, userId]);
     res.json(friends);
   } catch (error) {
     res.status(500).json({ error: error.message });

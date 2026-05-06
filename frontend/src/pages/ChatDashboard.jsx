@@ -8,12 +8,22 @@ import toast, { Toaster } from 'react-hot-toast';
 
 const ChatDashboard = () => {
   const [currentChat, setCurrentChat] = useState(null);
-  const [view, setView] = useState('chat'); // 'chat' or 'feed'
+  const [view, setView] = useState('chat');
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const { token } = useAuth();
   const socket = useSocket(token);
+
+  const handleGroupDeleted = (chatId) => {
+    if (currentChat?.id === chatId) setCurrentChat(null);
+  };
+
+  const handleGroupUpdated = (chatId, data) => {
+    if (currentChat?.id === chatId) {
+      setCurrentChat(prev => ({ ...prev, ...data }));
+    }
+  };
 
   useEffect(() => {
     if (!socket) return;
@@ -109,7 +119,12 @@ const ChatDashboard = () => {
         {view === 'feed' ? (
           <Feed socket={socket} />
         ) : currentChat ? (
-          <ChatWindow chat={currentChat} socket={socket} />
+          <ChatWindow 
+            chat={currentChat} 
+            socket={socket} 
+            onGroupDeleted={handleGroupDeleted}
+            onGroupUpdated={handleGroupUpdated}
+          />
         ) : (
           <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(15, 23, 42, 0.4)' }}>
             <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>

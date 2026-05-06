@@ -2,17 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 import api from '../services/api';
-import { Send, MoreVertical, Paperclip } from 'lucide-react';
+import { Send, MoreVertical, Paperclip, Info, LogOut, UserPlus } from 'lucide-react';
+import GroupInfoModal from './GroupInfoModal';
 
-const ChatWindow = ({ chat, socket }) => {
+const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   const { user, token } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   let typingTimeout = useRef(null);
+
+  const getBaseUrl = () => {
+    return import.meta.env.VITE_API_URL.replace('/api', '');
+  };
 
   useEffect(() => {
     fetchMessages();
@@ -104,7 +111,7 @@ const ChatWindow = ({ chat, socket }) => {
 
   const sendMessage = (e) => {
     e.preventDefault();
-    if (inputMessage.trim() && socket) {
+    if (inputMessage.trim() && socket && canPost) {
       socket.emit('send_message', {
         chatId: chat.id,
         content: inputMessage,
@@ -114,13 +121,23 @@ const ChatWindow = ({ chat, socket }) => {
     }
   };
 
+  const canPost = !chat.is_group || chat.anyone_can_post || chat.my_role === 'admin';
+
   return (
     <div className="chat-window">
       <div className="chat-header">
-        <div className="avatar">
-          {chat.is_group ? 'G' : chat.other_username?.[0]?.toUpperCase()}
+        <div className="avatar" style={{ cursor: chat.is_group ? 'pointer' : 'default' }} onClick={() => chat.is_group && setShowInfoModal(true)}>
+          {chat.is_group ? (
+            chat.group_pic ? (
+              <img src={`${getBaseUrl()}${chat.group_pic}`} alt="Group" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : chat.group_name?.[0]?.toUpperCase()
+          ) : (
+            chat.other_profile_pic ? (
+              <img src={`${getBaseUrl()}${chat.other_profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : chat.other_username?.[0]?.toUpperCase()
+          )}
         </div>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, cursor: chat.is_group ? 'pointer' : 'default' }} onClick={() => chat.is_group && setShowInfoModal(true)}>
           <h3 style={{ margin: 0, fontWeight: 600 }}>
             {chat.is_group ? chat.group_name : chat.other_username}
           </h3>
@@ -130,9 +147,42 @@ const ChatWindow = ({ chat, socket }) => {
             </span>
           )}
         </div>
-        <button style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-          <MoreVertical size={20} />
-        </button>
+        <div style={{ position: 'relative' }}>
+          <button 
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+            onClick={() => setShowMenu(!showMenu)}
+          >
+            <MoreVertical size={20} />
+          </button>
+          
+          {showMenu && (
+            <div className="glass-panel" style={{ 
+              position: 'absolute', 
+              top: '100%', 
+              right: 0, 
+              zIndex: 100, 
+              minWidth: '150px',
+              padding: '0.5rem',
+              marginTop: '0.5rem',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+            }}>
+              {chat.is_group ? (
+                <>
+                  <div className="menu-item" onClick={() => { setShowInfoModal(true); setShowMenu(false); }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', cursor: 'pointer', borderRadius: '0.25rem' }}>
+                    <Info size={16} /> Group Info
+                  </div>
+                  <div className="menu-item" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', cursor: 'pointer', borderRadius: '0.25rem', color: 'var(--danger)' }}>
+                    <LogOut size={16} /> Leave Group
+                  </div>
+                </>
+              ) : (
+                <div className="menu-item" onClick={() => { setShowMenu(false); }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', cursor: 'pointer', borderRadius: '0.25rem' }}>
+                  <User size={16} /> View Profile
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="messages-area">
@@ -194,14 +244,24 @@ const ChatWindow = ({ chat, socket }) => {
             className="message-input" 
             value={inputMessage} 
             onChange={handleTyping} 
-            placeholder={isUploading ? 'Uploading...' : 'Type a message...'}
-            disabled={isUploading}
+            placeholder={!canPost ? 'Only admins can send messages here' : (isUploading ? 'Uploading...' : 'Type a message...')}
+            disabled={isUploading || !canPost}
           />
-          <button type="submit" className="send-btn" disabled={!inputMessage.trim()}>
+          <button type="submit" className="send-btn" disabled={!inputMessage.trim() || !canPost}>
             <Send size={20} />
           </button>
         </form>
       </div>
+
+      {chat.is_group && (
+        <GroupInfoModal 
+          isOpen={showInfoModal} 
+          onClose={() => setShowInfoModal(false)} 
+          chatId={chat.id}
+          onGroupDeleted={onGroupDeleted}
+          onGroupUpdated={(data) => { if (onGroupUpdated) onGroupUpdated(chat.id, data); }}
+        />
+      )}
     </div>
   );
 };
