@@ -1,4 +1,4 @@
-# FourChat - Production-Ready Real-time Social Application
+# FourChat - Social Media App
 
 FourChat is a high-performance chat and social application built with Node.js, React, and MySQL/MariaDB. This project has been upgraded to a **Production-Grade Architecture** featuring real-time caching with Redis and event-driven messaging with Kafka.
 
