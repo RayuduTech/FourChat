@@ -40,17 +40,28 @@ module.exports = function(io) {
 
     socket.on('new_post', (data) => {
       // Broadcast to everyone for a global feed notification
-      socket.broadcast.emit('new_post_notification', { sender: socket.user.username });
+      const { postId, sender } = data;
+      socket.broadcast.emit('new_post_notification', { sender: sender || socket.user.username, postId });
     });
 
     socket.on('post_like', (data) => {
-      const { ownerId, likerName } = data;
-      socket.to(`user_${ownerId}`).emit('post_like', { likerName });
+      const { postId, ownerId, likerName } = data;
+      socket.to(`user_${ownerId}`).emit('post_like', { likerName, postId });
     });
 
     socket.on('post_comment', (data) => {
-      const { ownerId, commenterName } = data;
-      socket.to(`user_${ownerId}`).emit('post_comment', { commenterName });
+      const { postId, ownerId, commenterName } = data;
+      socket.to(`user_${ownerId}`).emit('post_comment', { commenterName, postId });
+    });
+
+    socket.on('comment_reply', (data) => {
+      const { postId, ownerId, commenterName } = data;
+      socket.to(`user_${ownerId}`).emit('comment_reply', { commenterName, postId });
+    });
+
+    socket.on('comment_like', (data) => {
+      const { ownerId, likerName } = data;
+      socket.to(`user_${ownerId}`).emit('comment_like', { likerName });
     });
 
     socket.on('join_room', (chatId) => {

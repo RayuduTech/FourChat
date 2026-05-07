@@ -2,9 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { LogOut, Search, MessageSquare, UserPlus, Check, X, Bell, User, LayoutGrid, Users } from 'lucide-react';
-import ProfileModal from './ProfileModal';
 
-const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, currentView, notificationsCount, onBellClick }) => {
+const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, currentView, notificationsCount, onBellClick, setProfileModal }) => {
   const { user, logout } = useAuth();
   const [chats, setChats] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,7 +11,6 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
   const [pendingRequests, setPendingRequests] = useState([]);
   const [friends, setFriends] = useState([]);
   const [activeTab, setActiveTab] = useState('chats'); // 'chats', 'requests', 'friends' or 'feed'
-  const [profileModal, setProfileModal] = useState({ isOpen: false, userId: null, isOwn: false });
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [groupName, setGroupName] = useState('');
@@ -221,7 +219,7 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
           <div className="search-results">
             <h4 style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: '1rem 0 0.5rem 1rem', textTransform: 'uppercase' }}>Users</h4>
             {searchResults.map(u => (
-              <div key={u.id} className="chat-item">
+              <div key={u.id} className="chat-item" style={{ cursor: 'pointer' }} onClick={() => setProfileModal({ isOpen: true, userId: u.id, isOwnProfile: false })}>
                 <div className="avatar">
                   {u.profile_pic ? (
                     <img src={`${getBaseUrl()}${u.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
@@ -230,12 +228,16 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
                   )}
                 </div>
                 <div className="chat-info">
-                  <div className="chat-name">{u.username}</div>
-                  <div className="chat-preview">{u.friendship_status || 'Not connected'}</div>
+                  <div className="chat-header">
+                    <span className="name">{u.username}</span>
+                  </div>
+                  <div className="last-message">
+                    {u.friendship_status === 'accepted' ? 'Connected' : 'Not connected'}
+                  </div>
                 </div>
                 <div className="chat-actions">
                   {!u.friendship_status && (
-                    <button onClick={() => sendInvite(u.id)} className="icon-btn" title="Invite">
+                    <button onClick={(e) => { e.stopPropagation(); sendInvite(u.id); }} className="icon-btn" title="Invite">
                       <UserPlus size={18} />
                     </button>
                   )}
@@ -404,14 +406,8 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
             )}
           </>
         )}
-      </div>
-      
-      <ProfileModal 
-        isOpen={profileModal.isOpen} 
-        onClose={() => setProfileModal({ ...profileModal, isOpen: false })}
-        userId={profileModal.userId}
-        isOwnProfile={profileModal.isOwn}
-      />
+        </div>
+      )}
 
       {showGroupModal && (
         <div className="modal-overlay" onClick={() => setShowGroupModal(false)}>

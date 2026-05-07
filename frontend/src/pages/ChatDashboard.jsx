@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import Feed from '../components/Feed';
+import ProfileModal from '../components/ProfileModal';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../hooks/useSocket';
 import toast, { Toaster } from 'react-hot-toast';
+import api from '../services/api';
+import { Bell, LogOut } from 'lucide-react';
 
 const ChatDashboard = () => {
   const [currentChat, setCurrentChat] = useState(null);
@@ -12,8 +15,32 @@ const ChatDashboard = () => {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const { token } = useAuth();
+  const [selectedPostId, setSelectedPostId] = useState(null);
+  const [profileModal, setProfileModal] = useState({ isOpen: false, userId: null, isOwn: false });
+  const { token, user } = useAuth();
   const socket = useSocket(token);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/notifications');
+      // Map DB fields to UI fields if needed
+      const mapped = res.data.map(n => ({
+        id: n.id,
+        type: n.type,
+        text: n.text,
+        time: n.created_at,
+        postId: n.post_id,
+        isRead: n.is_read
+      }));
+      setNotifications(mapped);
+    } catch (err) {
+      console.error('Error fetching notifications', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user) fetchNotifications();
+  }, [user]);
 
   const handleGroupDeleted = (chatId) => {
     if (currentChat?.id === chatId) setCurrentChat(null);
@@ -30,27 +57,32 @@ const ChatDashboard = () => {
 
     socket.on('new_friend_request', (data) => {
       toast(`New friend request from ${data.sender.username}`, { icon: '👋', duration: 4000 });
-      setNotifications(prev => [{ id: Date.now(), type: 'friend_request', text: `Friend request from ${data.sender.username}`, time: new Date() }, ...prev]);
+      fetchNotifications();
     });
 
     socket.on('friend_request_accepted', (data) => {
       toast(`${data.receiver.username} accepted your request!`, { icon: '✅', duration: 4000 });
-      setNotifications(prev => [{ id: Date.now(), type: 'friend_accept', text: `${data.receiver.username} accepted your request`, time: new Date() }, ...prev]);
+      fetchNotifications();
     });
 
     socket.on('new_post_notification', (data) => {
       toast(`${data.sender} just shared a new post!`, { icon: '✨', duration: 4000 });
-      setNotifications(prev => [{ id: Date.now(), type: 'new_post', text: `${data.sender} shared a new post`, time: new Date() }, ...prev]);
+      fetchNotifications();
     });
 
     socket.on('post_like', (data) => {
       toast(`${data.likerName} liked your post!`, { icon: '❤️', duration: 4000 });
-      setNotifications(prev => [{ id: Date.now(), type: 'post_like', text: `${data.likerName} liked your post`, time: new Date() }, ...prev]);
+      fetchNotifications();
     });
 
     socket.on('post_comment', (data) => {
       toast(`${data.commenterName} commented on your post!`, { icon: '💬', duration: 4000 });
-      setNotifications(prev => [{ id: Date.now(), type: 'post_comment', text: `${data.commenterName} commented on your post`, time: new Date() }, ...prev]);
+      fetchNotifications();
+    });
+    
+    socket.on('comment_reply', (data) => {
+      toast(`${data.commenterName} replied to your comment!`, { icon: '↪️', duration: 4000 });
+      fetchNotifications();
     });
 
     return () => {
@@ -92,22 +124,39 @@ const ChatDashboard = () => {
         socket={socket}
         setView={setView}
         currentView={view}
-        notificationsCount={notifications.length}
+        notificationsCount={notifications.filter(n => !n.isRead).length}
         onBellClick={() => setShowNotifications(!showNotifications)}
+        setProfileModal={setProfileModal}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%' }}>
         {showNotifications && (
           <div className="notifications-dropdown glass-panel">
             <div className="dropdown-header">
               <h4>Notifications</h4>
-              <button onClick={() => setNotifications([])} className="text-btn">Clear All</button>
+              <button onClick={async () => {
+                await api.delete('/notifications');
+                setNotifications([]);
+              }} className="text-btn">Clear All</button>
             </div>
             <div className="notifications-list">
               {notifications.length === 0 ? (
                 <div className="empty-state">No new notifications</div>
               ) : (
                 notifications.map(n => (
-                  <div key={n.id} className="notification-item">
+                  <div 
+                    key={n.id} 
+                    className={`notification-item ${n.postId ? 'clickable' : ''} ${n.isRead ? 'is-read' : ''}`}
+                    onClick={async () => {
+                      if (n.postId) {
+                        setSelectedPostId(n.postId);
+                        setView('feed');
+                        setShowNotifications(false);
+                      }
+                      // Mark as read in DB
+                      await api.put(`/notifications/${n.id}/read`);
+                      fetchNotifications();
+                    }}
+                  >
                     <p>{n.text}</p>
                     <span>{new Date(n.time).toLocaleTimeString()}</span>
                   </div>
@@ -117,7 +166,12 @@ const ChatDashboard = () => {
           </div>
         )}
         {view === 'feed' ? (
-          <Feed socket={socket} />
+          <Feed 
+            socket={socket} 
+            setProfileModal={setProfileModal} 
+            selectedPostId={selectedPostId} 
+            clearSelectedPostId={() => setSelectedPostId(null)} 
+          />
         ) : currentChat ? (
           <ChatWindow 
             chat={currentChat} 
@@ -133,6 +187,12 @@ const ChatDashboard = () => {
           </div>
         )}
       </div>
+      <ProfileModal 
+        isOpen={profileModal.isOpen} 
+        onClose={() => setProfileModal({ ...profileModal, isOpen: false })}
+        userId={profileModal.userId}
+        isOwnProfile={profileModal.isOwn}
+      />
     </div>
   );
 };

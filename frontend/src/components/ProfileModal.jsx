@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Camera, Save } from 'lucide-react';
+import { X, Camera, Save, UserPlus, Clock, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const ProfileModal = ({ isOpen, onClose, userId, isOwnProfile }) => {
-  const { updateUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -46,9 +46,7 @@ const ProfileModal = ({ isOpen, onClose, userId, isOwnProfile }) => {
         formData.append('profile_pic', avatar);
       }
       
-      const res = await api.put('/auth/profile', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.put('/auth/profile', formData);
 
       // Update global context
       if (isOwnProfile) {
@@ -66,6 +64,30 @@ const ProfileModal = ({ isOpen, onClose, userId, isOwnProfile }) => {
     if (file) {
       setAvatar(file);
       setPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleSendInvite = async (receiverId) => {
+    try {
+      await api.post('/friends/invite', { receiverId });
+      // Refresh profile to show "Request Sent"
+      fetchProfile();
+    } catch (err) {
+      console.error('Error sending invite', err);
+    }
+  };
+
+  const handleAccept = async (senderId) => {
+    try {
+      // Find the request ID
+      const res = await api.get('/friends/pending');
+      const req = res.data.find(r => r.sender_id === senderId);
+      if (req) {
+        await api.post('/friends/respond', { requestId: req.id, action: 'accepted' });
+        fetchProfile();
+      }
+    } catch (err) {
+      console.error('Error accepting invite', err);
     }
   };
 
@@ -143,6 +165,35 @@ const ProfileModal = ({ isOpen, onClose, userId, isOwnProfile }) => {
                   <Save size={18} style={{ marginRight: '0.5rem' }} />
                   Save Changes
                 </button>
+              )}
+
+              {!isOwnProfile && (
+                <div className="profile-actions" style={{ marginTop: '1rem' }}>
+                  {!profile.friendship_status && (
+                    <button className="btn-primary" onClick={() => handleSendInvite(profile.id)}>
+                      <UserPlus size={18} style={{ marginRight: '0.5rem' }} />
+                      Add Friend
+                    </button>
+                  )}
+                  {profile.friendship_status === 'pending' && profile.sender_id === user.id && (
+                    <button className="btn-secondary" disabled style={{ opacity: 0.7 }}>
+                      <Clock size={18} style={{ marginRight: '0.5rem' }} />
+                      Request Sent
+                    </button>
+                  )}
+                  {profile.friendship_status === 'pending' && profile.sender_id !== user.id && (
+                    <button className="btn-primary" onClick={() => handleAccept(profile.id)}>
+                      <Check size={18} style={{ marginRight: '0.5rem' }} />
+                      Accept Request
+                    </button>
+                  )}
+                  {profile.friendship_status === 'accepted' && (
+                    <button className="btn-success" disabled style={{ opacity: 0.8, background: '#22c55e', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
+                      <Check size={18} style={{ marginRight: '0.5rem' }} />
+                      Connected
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>

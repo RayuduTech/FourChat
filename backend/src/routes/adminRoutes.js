@@ -9,5 +9,6 @@ router.use(auth, admin);
 
 router.get('/users', adminController.getUsers);
 router.post('/reset-password', adminController.resetPassword);
+router.put('/users/:id/unlock', adminController.unlockUser);
 
 module.exports = router;

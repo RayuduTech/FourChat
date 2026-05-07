@@ -93,9 +93,11 @@ exports.createGroup = async (req, res) => {
       is_group: true, 
       group_name: groupName, 
       anyone_can_post: true, 
-      my_role: 'admin' 
+      my_role: 'admin',
+      group_pic: null
     });
   } catch (error) {
+    console.error("Error creating group:", error);
     res.status(500).json({ error: error.message });
   }
 };

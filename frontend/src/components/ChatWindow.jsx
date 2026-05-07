@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 import api from '../services/api';
-import { Send, MoreVertical, Paperclip, Info, LogOut, UserPlus } from 'lucide-react';
+import { Send, MoreVertical, Paperclip, Info, LogOut, UserPlus, User } from 'lucide-react';
 import GroupInfoModal from './GroupInfoModal';
+import ProfileModal from './ProfileModal';
 
 const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   const { user, token } = useAuth();
@@ -12,6 +13,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -176,7 +178,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
                   </div>
                 </>
               ) : (
-                <div className="menu-item" onClick={() => { setShowMenu(false); }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', cursor: 'pointer', borderRadius: '0.25rem' }}>
+                <div className="menu-item" onClick={() => { setShowProfileModal(true); setShowMenu(false); }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', cursor: 'pointer', borderRadius: '0.25rem' }}>
                   <User size={16} /> View Profile
                 </div>
               )}
@@ -260,6 +262,15 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
           chatId={chat.id}
           onGroupDeleted={onGroupDeleted}
           onGroupUpdated={(data) => { if (onGroupUpdated) onGroupUpdated(chat.id, data); }}
+        />
+      )}
+
+      {!chat.is_group && showProfileModal && (
+        <ProfileModal 
+          isOpen={showProfileModal} 
+          onClose={() => setShowProfileModal(false)} 
+          userId={chat.other_user_id} 
+          isOwnProfile={false}
         />
       )}
     </div>

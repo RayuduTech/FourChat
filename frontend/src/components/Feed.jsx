@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
-const Feed = ({ socket }) => {
+const Feed = ({ socket, setProfileModal, selectedPostId, clearSelectedPostId }) => {
   const [posts, setPosts] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState(null);
@@ -14,7 +14,75 @@ const Feed = ({ socket }) => {
   const [commentingOn, setCommentingOn] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState({}); // { postId: [comments] }
+  const [replyingTo, setReplyingTo] = useState(null); // { id, username }
   const { user } = useAuth();
+  
+  // Recursive Comment Component
+  const CommentItem = ({ comment, allComments, postId }) => {
+    const replies = allComments.filter(c => c.parent_comment_id === comment.id);
+    const [isExpanded, setIsExpanded] = useState(false);
+    
+    return (
+      <div className="comment-thread">
+        <div className="comment-item">
+          <div className="comment-item-container">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+              <strong 
+                style={{ cursor: 'pointer', color: 'var(--primary)' }}
+                onClick={() => setProfileModal({ isOpen: true, userId: comment.user_id, isOwn: comment.user_id === user.id })}
+              >
+                {comment.username}
+              </strong>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                {new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <span>{comment.content}</span>
+          </div>
+          <div className="comment-actions">
+            <button 
+              className={`comment-action-btn ${comment.is_liked ? 'active' : ''}`}
+              onClick={() => handleCommentLike(comment.id, postId)}
+            >
+              <Heart size={14} fill={comment.is_liked ? 'var(--danger)' : 'none'} /> {comment.like_count || 0}
+            </button>
+            <button 
+              className="comment-action-btn"
+              onClick={() => {
+                setReplyingTo({ id: comment.id, username: comment.username });
+                setCommentText(`@${comment.username} `);
+              }}
+            >
+              Reply
+            </button>
+            {replies.length > 0 && (
+              <button 
+                className="comment-action-btn"
+                onClick={() => setIsExpanded(!isExpanded)}
+                style={{ color: 'var(--primary)', fontWeight: '600' }}
+              >
+                {isExpanded ? 'Hide replies' : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {isExpanded && replies.length > 0 && (
+          <div className="replies-list">
+            {replies.map(reply => (
+              <CommentItem 
+                key={reply.id} 
+                comment={reply} 
+                allComments={allComments} 
+                postId={postId} 
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const getBaseUrl = () => {
     return import.meta.env.VITE_API_URL.replace('/api', '');
   };
@@ -59,14 +127,14 @@ const Feed = ({ socket }) => {
         formData.append('image_url', imageUrl);
       }
 
-      await api.post('/social', formData, {
+      const res = await api.post('/social', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       
       setContent('');
       setImageUrl('');
       fetchPosts();
-      if (socket) socket.emit('new_post', { sender: user.username });
+      if (socket) socket.emit('new_post', { sender: user.username, postId: res.data.id });
       toast.success('Post shared!');
     } catch (err) {
       console.error('Error creating post', err);
@@ -80,7 +148,7 @@ const Feed = ({ socket }) => {
     try {
       const res = await api.post(`/social/${postId}/like`);
       if (res.data.ownerId && socket) {
-        socket.emit('post_like', { ownerId: res.data.ownerId, likerName: res.data.likerName });
+        socket.emit('post_like', { postId, ownerId: res.data.ownerId, likerName: res.data.likerName });
       }
       fetchPosts();
     } catch (err) {
@@ -91,16 +159,39 @@ const Feed = ({ socket }) => {
   const handleComment = async (postId) => {
     if (!commentText.trim()) return;
     try {
-      const res = await api.post(`/social/${postId}/comments`, { content: commentText });
-      if (res.data.ownerId && socket) {
-        socket.emit('post_comment', { ownerId: res.data.ownerId, commenterName: res.data.commenterName });
+      const res = await api.post(`/social/${postId}/comments`, { 
+        content: commentText,
+        parent_comment_id: replyingTo?.id || null
+      });
+      
+      if (socket) {
+        if (res.data.ownerId) {
+          socket.emit('post_comment', { postId, ownerId: res.data.ownerId, commenterName: res.data.commenterName });
+        }
+        if (res.data.replyToId) {
+          socket.emit('comment_reply', { postId, ownerId: res.data.replyToId, commenterName: res.data.commenterName });
+        }
       }
+      
       setCommentText('');
-      setCommentingOn(null);
+      setReplyingTo(null);
+      setCommentingOn(postId);
       fetchPosts();
       fetchComments(postId);
     } catch (err) {
       console.error('Error adding comment', err);
+    }
+  };
+
+  const handleCommentLike = async (commentId, postId) => {
+    try {
+      const res = await api.post(`/social/comments/${commentId}/like`);
+      if (res.data.ownerId && socket) {
+        socket.emit('comment_like', { ownerId: res.data.ownerId, likerName: res.data.likerName });
+      }
+      fetchComments(postId);
+    } catch (err) {
+      console.error('Error liking comment', err);
     }
   };
 
@@ -119,6 +210,10 @@ const Feed = ({ socket }) => {
     if (!file) return;
     setImageUrl(file); // Set the file object for later upload
   };
+
+  const filteredPosts = selectedPostId 
+    ? posts.filter(p => p.id === parseInt(selectedPostId)) 
+    : posts;
 
   return (
     <div className="feed-container">
@@ -151,6 +246,13 @@ const Feed = ({ socket }) => {
         </form>
       </div>
 
+      {selectedPostId && (
+        <div style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(99, 102, 241, 0.1)', marginBottom: '1rem', borderRadius: '12px' }}>
+          <span style={{ fontSize: '0.9rem', color: 'var(--primary)' }}>Viewing single post</span>
+          <button className="text-btn" onClick={clearSelectedPostId}>Show All Posts</button>
+        </div>
+      )}
+
       <div className="post-list">
         {fetching ? (
           <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -160,18 +262,23 @@ const Feed = ({ socket }) => {
           <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--danger)' }}>
             {error}
           </div>
-        ) : posts.length === 0 ? (
+        ) : filteredPosts.length === 0 ? (
           <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No posts yet. Be the first to share something!
+            {selectedPostId ? 'Post not found or unavailable.' : 'No posts yet. Be the first to share something!'}
           </div>
-        ) : posts.map(post => (
+        ) : filteredPosts.map(post => (
           <div key={post.id} className="post-card glass-panel">
             <div className="post-card-header">
-              <div className="avatar">
+              <div className="avatar clickable" onClick={() => setProfileModal({ isOpen: true, userId: post.user_id, isOwn: post.user_id === user.id })}>
                 {post.username?.[0]?.toUpperCase() || '?'}
               </div>
               <div className="post-meta">
-                <h4>{post.username}</h4>
+                <h4 
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setProfileModal({ isOpen: true, userId: post.user_id, isOwn: post.user_id === user.id })}
+                >
+                  {post.username}
+                </h4>
                 <span>{new Date(post.created_at).toLocaleString()}</span>
               </div>
             </div>
@@ -198,23 +305,38 @@ const Feed = ({ socket }) => {
             {commentingOn === post.id && (
               <div className="comment-section">
                 <div className="comment-list">
-                  {comments[post.id]?.map(c => (
-                    <div key={c.id} className="comment-item">
-                      <strong>{c.username}: </strong> {c.content}
-                    </div>
+                  {(comments[post.id] || []).filter(c => !c.parent_comment_id).map(c => (
+                    <CommentItem 
+                      key={c.id} 
+                      comment={c} 
+                      allComments={comments[post.id]} 
+                      postId={post.id} 
+                    />
                   ))}
                 </div>
+                
                 <div className="comment-input-area">
-                  <input 
-                    type="text" 
-                    placeholder="Write a comment..." 
-                    value={commentText}
-                    onChange={e => setCommentText(e.target.value)}
-                    className="form-input"
-                  />
-                  <button className="icon-btn" onClick={() => handleComment(post.id)}>
-                    <Send size={16} />
-                  </button>
+                  {replyingTo && (
+                    <div className="reply-indicator">
+                      <span>Replying to <strong>{replyingTo.username}</strong></span>
+                      <button className="text-btn" onClick={() => {
+                        setReplyingTo(null);
+                        setCommentText('');
+                      }}>Cancel</button>
+                    </div>
+                  )}
+                  <div className="comment-input-wrapper">
+                    <input 
+                      type="text" 
+                      placeholder={replyingTo ? "Write a reply..." : "Write a comment..."}
+                      value={commentText}
+                      onChange={e => setCommentText(e.target.value)}
+                      className="form-input"
+                    />
+                    <button className="icon-btn" onClick={() => handleComment(post.id)}>
+                      <Send size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

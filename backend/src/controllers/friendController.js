@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { createNotification } = require('./notificationController');
 
 exports.sendRequest = async (req, res) => {
   const { receiverId } = req.body;
@@ -26,6 +27,8 @@ exports.sendRequest = async (req, res) => {
       'INSERT INTO Friendships (user_id1, user_id2, status, sender_id) VALUES (?, ?, ?, ?)',
       [user_id1, user_id2, 'pending', senderId]
     );
+    
+    await createNotification(receiverId, 'friend_request', `${req.user.username} sent you a friend request`);
 
     res.status(201).json({ message: 'Friend request sent' });
   } catch (error) {
@@ -62,6 +65,11 @@ exports.respondToRequest = async (req, res) => {
       await db.query('DELETE FROM Friendships WHERE id = ?', [requestId]);
     } else {
       await db.query('UPDATE Friendships SET status = ? WHERE id = ?', [action, requestId]);
+      if (action === 'accepted') {
+        const otherUserId = (request.user_id1 === userId ? request.user_id2 : request.user_id1);
+        const friendId = (request.sender_id === userId ? otherUserId : request.sender_id);
+        await createNotification(friendId, 'friend_accept', `${req.user.username} accepted your friend request`);
+      }
     }
     
     res.json({ message: `Request ${action}`, action });

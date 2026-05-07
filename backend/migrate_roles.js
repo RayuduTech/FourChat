@@ -3,15 +3,23 @@ const db = require('./src/config/db');
 async function migrate() {
   try {
     // 1. Add role to Chat_Participants
-    await db.query("ALTER TABLE Chat_Participants ADD COLUMN role ENUM('member', 'admin') DEFAULT 'member'");
+    try {
+      await db.query("ALTER TABLE Chat_Participants ADD COLUMN role ENUM('member', 'admin') DEFAULT 'member'");
+    } catch(e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
     
     // 2. Add anyone_can_post to Chats
-    await db.query("ALTER TABLE Chats ADD COLUMN anyone_can_post BOOLEAN DEFAULT TRUE");
+    try {
+      await db.query("ALTER TABLE Chats ADD COLUMN anyone_can_post BOOLEAN DEFAULT TRUE");
+    } catch(e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
 
-    // 3. Migrate existing admins from Chats.admin_id to Chat_Participants.role
-    const [groups] = await db.query('SELECT id, admin_id FROM Chats WHERE is_group = true AND admin_id IS NOT NULL');
-    for (const group of groups) {
-      await db.query("UPDATE Chat_Participants SET role = 'admin' WHERE chat_id = ? AND user_id = ?", [group.id, group.admin_id]);
+    // 3. Migrate existing admins from Chats.admin_id to Chat_Participants.role (if admin_id exists)
+    try {
+      const [groups] = await db.query('SELECT id, admin_id FROM Chats WHERE is_group = true AND admin_id IS NOT NULL');
+      for (const group of groups) {
+        await db.query("UPDATE Chat_Participants SET role = 'admin' WHERE chat_id = ? AND user_id = ?", [group.id, group.admin_id]);
+      }
+    } catch (e) {
+      console.log("Skipping legacy admin_id migration (column likely doesn't exist):", e.message);
     }
 
     console.log('Migration successful: Multiple admins and post permissions supported.');

@@ -9,6 +9,7 @@ const chatRoutes = require('./src/routes/chatRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const friendRoutes = require('./src/routes/friendRoutes');
 const postRoutes = require('./src/routes/postRoutes');
+const notificationRoutes = require('./src/routes/notificationRoutes');
 const chatHandler = require('./src/sockets/chatHandler');
 const { connectRedis } = require('./src/config/redis');
 const { connectKafka } = require('./src/config/kafka');
@@ -33,6 +34,7 @@ app.use('/api/chats', chatRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/social', postRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // Basic test route

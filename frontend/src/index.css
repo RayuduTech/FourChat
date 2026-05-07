@@ -883,3 +883,16 @@ body {
   transform: scale(1.15);
   background: var(--secondary);
 }
+
+.notification-item.clickable {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.notification-item.clickable:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.notification-item.is-read {
+  opacity: 0.6;
+}

@@ -1,13 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { LogOut, Users, Key, AlertTriangle } from 'lucide-react';
+import { LogOut, Users, Key, AlertTriangle, Search, Unlock, ChevronUp, ChevronDown, Filter } from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
 
 const Dashboard = ({ token, logout }) => {
   const [users, setUsers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [error, setError] = useState('');
+  
+  const [sortConfig, setSortConfig] = useState({ key: 'id', direction: 'desc' });
+  const [filters, setFilters] = useState({ role: '', status: '', accountStatus: '' });
 
   const api = axios.create({
     baseURL: 'http://localhost:5000/api',
@@ -16,6 +21,13 @@ const Dashboard = ({ token, logout }) => {
 
   useEffect(() => {
     fetchUsers();
+    
+    // Refresh the user list every 10 minutes
+    const intervalId = setInterval(() => {
+      fetchUsers();
+    }, 10 * 60 * 1000);
+    
+    return () => clearInterval(intervalId);
   }, []);
 
   const fetchUsers = async () => {
@@ -48,6 +60,76 @@ const Dashboard = ({ token, logout }) => {
     }
   };
 
+  const handleUnlockAccount = async (userId) => {
+    try {
+      await api.put(`/admin/users/${userId}/unlock`);
+      toast.success('Account successfully unlocked!');
+      fetchUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to unlock account');
+    }
+  };
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const filteredAndSortedUsers = useMemo(() => {
+    let result = users;
+
+    // Search filter
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase().replace(/^#/, ''); // Allow searching by "#9" or "9"
+      result = result.filter(u => 
+        u.username.toLowerCase().includes(lowerSearch) || 
+        u.email.toLowerCase().includes(lowerSearch) ||
+        u.id.toString().includes(lowerSearch)
+      );
+    }
+
+    // Column filters
+    if (filters.role) {
+      if (filters.role === 'admin') result = result.filter(u => u.is_admin);
+      else if (filters.role === 'user') result = result.filter(u => !u.is_admin);
+    }
+    if (filters.status) {
+      result = result.filter(u => u.status === filters.status);
+    }
+    if (filters.accountStatus) {
+      if (filters.accountStatus === 'locked') {
+        result = result.filter(u => u.locked_until && new Date(u.locked_until) > new Date());
+      } else if (filters.accountStatus === 'active') {
+        result = result.filter(u => !u.locked_until || new Date(u.locked_until) <= new Date());
+      }
+    }
+
+    // Sorting
+    result = [...result].sort((a, b) => {
+      let aVal = a[sortConfig.key];
+      let bVal = b[sortConfig.key];
+      
+      // Special handling for derived columns
+      if (sortConfig.key === 'accountStatus') {
+        aVal = a.locked_until && new Date(a.locked_until) > new Date() ? 1 : 0;
+        bVal = b.locked_until && new Date(b.locked_until) > new Date() ? 1 : 0;
+      }
+      if (sortConfig.key === 'role') {
+        aVal = a.is_admin ? 1 : 0;
+        bVal = b.is_admin ? 1 : 0;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [users, searchTerm, filters, sortConfig]);
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 flex">
       {/* Sidebar */}
@@ -74,10 +156,23 @@ const Dashboard = ({ token, logout }) => {
 
       {/* Main Content */}
       <div className="flex-1 p-10 overflow-y-auto">
+        <Toaster position="top-right" />
         <div className="mb-8 flex justify-between items-center">
           <h2 className="text-3xl font-bold">Users Directory</h2>
-          <div className="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 text-sm">
-            Total Users: <span className="font-bold text-indigo-400">{users.length}</span>
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search users..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500 w-64"
+              />
+            </div>
+            <div className="bg-gray-800 px-4 py-2 rounded-full border border-gray-700 text-sm">
+              Total Users: <span className="font-bold text-indigo-400">{users.length}</span>
+            </div>
           </div>
         </div>
 
@@ -85,15 +180,67 @@ const Dashboard = ({ token, logout }) => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-900/50 text-gray-400 text-sm uppercase tracking-wider border-b border-gray-700">
-                <th className="p-4">ID</th>
-                <th className="p-4">User</th>
-                <th className="p-4">Role</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Actions</th>
+                <th className="p-4 cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => handleSort('id')}>
+                  <div className="flex items-center gap-1">ID {sortConfig.key === 'id' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="p-4 cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => handleSort('username')}>
+                  <div className="flex items-center gap-1">User {sortConfig.key === 'username' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}</div>
+                </th>
+                <th className="p-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="cursor-pointer flex items-center gap-1" onClick={() => handleSort('role')}>
+                      Role {sortConfig.key === 'role' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+                    </div>
+                    <select 
+                      className="bg-gray-800 border border-gray-700 text-xs rounded p-1 text-gray-300 w-full"
+                      value={filters.role}
+                      onChange={e => setFilters({...filters, role: e.target.value})}
+                    >
+                      <option value="">All</option>
+                      <option value="admin">Admin</option>
+                      <option value="user">User</option>
+                    </select>
+                  </div>
+                </th>
+                <th className="p-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="cursor-pointer flex items-center gap-1" onClick={() => handleSort('status')}>
+                      Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+                    </div>
+                    <select 
+                      className="bg-gray-800 border border-gray-700 text-xs rounded p-1 text-gray-300 w-full"
+                      value={filters.status}
+                      onChange={e => setFilters({...filters, status: e.target.value})}
+                    >
+                      <option value="">All</option>
+                      <option value="online">Online</option>
+                      <option value="offline">Offline</option>
+                    </select>
+                  </div>
+                </th>
+                <th className="p-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="cursor-pointer flex items-center gap-1" onClick={() => handleSort('accountStatus')}>
+                      Account Status {sortConfig.key === 'accountStatus' && (sortConfig.direction === 'asc' ? <ChevronUp size={14}/> : <ChevronDown size={14}/>)}
+                    </div>
+                    <select 
+                      className="bg-gray-800 border border-gray-700 text-xs rounded p-1 text-gray-300 w-full"
+                      value={filters.accountStatus}
+                      onChange={e => setFilters({...filters, accountStatus: e.target.value})}
+                    >
+                      <option value="">All</option>
+                      <option value="active">Active</option>
+                      <option value="locked">Locked</option>
+                    </select>
+                  </div>
+                </th>
+                <th className="p-4 align-top pt-5">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-700">
-              {users.map(user => (
+              {filteredAndSortedUsers.map(user => {
+                const isLocked = user.locked_until && new Date(user.locked_until) > new Date();
+                return (
                 <tr key={user.id} className="hover:bg-gray-750 transition-colors">
                   <td className="p-4 text-gray-400">#{user.id}</td>
                   <td className="p-4">
@@ -121,16 +268,34 @@ const Dashboard = ({ token, logout }) => {
                     )}
                   </td>
                   <td className="p-4">
+                    {isLocked ? (
+                      <span className="px-3 py-1 bg-red-500/10 text-red-400 rounded-full text-xs font-medium border border-red-500/20 flex items-center gap-1 w-max">
+                        <AlertTriangle size={12} /> Locked
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 bg-gray-700 text-gray-300 rounded-full text-xs font-medium">Active</span>
+                    )}
+                  </td>
+                  <td className="p-4 flex gap-2">
                     <button 
                       onClick={() => setSelectedUser(user)}
-                      className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+                      title="Reset Password"
                     >
                       <Key size={16} />
-                      Reset Password
                     </button>
+                    {isLocked && (
+                      <button 
+                        onClick={() => handleUnlockAccount(user.id)}
+                        className="flex items-center gap-2 text-green-400 hover:text-green-300 bg-green-500/10 hover:bg-green-500/20 px-3 py-2 rounded-lg transition-colors text-sm font-medium"
+                        title="Unlock Account"
+                      >
+                        <Unlock size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

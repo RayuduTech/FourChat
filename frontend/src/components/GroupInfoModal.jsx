@@ -14,6 +14,7 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
   const [memberMenu, setMemberMenu] = useState(null);
   const [groupPicPreview, setGroupPicPreview] = useState(null);
   const [groupPicFile, setGroupPicFile] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef(null);
 
   const getBaseUrl = () => import.meta.env.VITE_API_URL.replace('/api', '');
@@ -61,9 +62,7 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
     try {
       const formData = new FormData();
       formData.append('group_pic', groupPicFile);
-      const res = await api.put(`/chats/${chatId}/info`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await api.put(`/chats/${chatId}/info`, formData);
       toast.success('Group picture updated!');
       setGroupPicPreview(null);
       setGroupPicFile(null);
@@ -120,7 +119,10 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
   };
 
   const handleDeleteGroup = async () => {
-    if (!window.confirm('Are you sure you want to permanently delete this group? This cannot be undone.')) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteGroup = async () => {
     try {
       await api.delete(`/chats/${chatId}`);
       toast.success('Group deleted');
@@ -128,6 +130,8 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       if (onGroupDeleted) onGroupDeleted(chatId);
     } catch (err) {
       toast.error('Failed to delete group');
+    } finally {
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -290,6 +294,29 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Custom Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="modal-overlay" style={{ zIndex: 1100, backgroundColor: 'rgba(0,0,0,0.7)' }}>
+            <div className="modal-content glass-panel" style={{ maxWidth: '350px', textAlign: 'center', padding: '2rem' }}>
+              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                <Trash2 size={24} />
+              </div>
+              <h3 style={{ margin: '0 0 0.5rem 0' }}>Delete Group?</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>
+                Are you sure you want to permanently delete this group? This action cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShowDeleteConfirm(false)}>
+                  Cancel
+                </button>
+                <button className="btn-primary" style={{ flex: 1, background: 'var(--danger)' }} onClick={confirmDeleteGroup}>
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
