@@ -16,6 +16,12 @@ const ChatDashboard = () => {
   useEffect(() => {
     localStorage.setItem('dashboard_view', view);
   }, [view]);
+  const [sidebarTab, setSidebarTab] = useState(localStorage.getItem('sidebar_active_tab') || 'chats');
+
+  useEffect(() => {
+    localStorage.setItem('sidebar_active_tab', sidebarTab);
+  }, [sidebarTab]);
+
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -24,19 +30,31 @@ const ChatDashboard = () => {
   const { token, user } = useAuth();
   const socket = useSocket(token);
 
+  const handleNotificationClick = async (n) => {
+    // 1. Navigation Logic
+    if (n.type === 'friend_request' || n.type === 'friend_accept') {
+      setSidebarTab(n.type === 'friend_request' ? 'requests' : 'friends');
+      setView('chat'); // Ensure we are in the sidebar/chat view
+    } else if (n.post_id || n.type === 'new_post' || n.type === 'post_like' || n.type === 'post_comment' || n.type === 'comment_reply' || n.type === 'comment_like') {
+      setSelectedPostId(n.post_id);
+      setView('feed');
+    }
+
+    setShowNotifications(false);
+
+    // 2. Mark as read in DB
+    try {
+      await api.put(`/notifications/${n.id}/read`);
+      fetchNotifications();
+    } catch (err) {
+      console.error('Error marking notification as read', err);
+    }
+  };
+
   const fetchNotifications = async () => {
     try {
       const res = await api.get('/notifications');
-      // Map DB fields to UI fields if needed
-      const mapped = res.data.map(n => ({
-        id: n.id,
-        type: n.type,
-        text: n.text,
-        time: n.created_at,
-        postId: n.post_id,
-        isRead: n.is_read
-      }));
-      setNotifications(mapped);
+      setNotifications(res.data);
     } catch (err) {
       console.error('Error fetching notifications', err);
     }
@@ -128,9 +146,11 @@ const ChatDashboard = () => {
         socket={socket}
         setView={setView}
         currentView={view}
-        notificationsCount={notifications.filter(n => !n.isRead).length}
+        notificationsCount={notifications.filter(n => !n.is_read).length}
         onBellClick={() => setShowNotifications(!showNotifications)}
         setProfileModal={setProfileModal}
+        activeTab={sidebarTab}
+        setActiveTab={setSidebarTab}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%' }}>
         {showNotifications && (
@@ -149,20 +169,11 @@ const ChatDashboard = () => {
                 notifications.map(n => (
                   <div 
                     key={n.id} 
-                    className={`notification-item ${n.postId ? 'clickable' : ''} ${n.isRead ? 'is-read' : ''}`}
-                    onClick={async () => {
-                      if (n.postId) {
-                        setSelectedPostId(n.postId);
-                        setView('feed');
-                        setShowNotifications(false);
-                      }
-                      // Mark as read in DB
-                      await api.put(`/notifications/${n.id}/read`);
-                      fetchNotifications();
-                    }}
+                    className={`notification-item clickable ${n.is_read ? 'is-read' : ''}`}
+                    onClick={() => handleNotificationClick(n)}
                   >
                     <p>{n.text}</p>
-                    <span>{new Date(n.time).toLocaleTimeString()}</span>
+                    <span>{new Date(n.created_at).toLocaleTimeString()}</span>
                   </div>
                 ))
               )}

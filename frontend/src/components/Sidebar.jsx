@@ -3,14 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { LogOut, Search, MessageSquare, UserPlus, Check, X, Bell, User, LayoutGrid, Users } from 'lucide-react';
 
-const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, currentView, notificationsCount, onBellClick, setProfileModal }) => {
+const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, currentView, notificationsCount, onBellClick, setProfileModal, activeTab, setActiveTab }) => {
   const { user, logout } = useAuth();
   const [chats, setChats] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [friends, setFriends] = useState([]);
-  const [activeTab, setActiveTab] = useState(localStorage.getItem('sidebar_active_tab') || 'chats');
 
   useEffect(() => {
     localStorage.setItem('sidebar_active_tab', activeTab);
@@ -54,12 +53,21 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
       if (searchQuery) handleSearch({ target: { value: searchQuery } });
     });
 
+    const handleGlobalRefresh = () => {
+      fetchChats();
+      fetchPendingRequests();
+      fetchFriends();
+    };
+
+    window.addEventListener('refreshFriendData', handleGlobalRefresh);
+
     return () => {
       socket.off('new_friend_request');
       socket.off('friend_request_accepted');
       socket.off('friend_request_rejected');
+      window.removeEventListener('refreshFriendData', handleGlobalRefresh);
     };
-  }, [socket]);
+  }, [socket, searchQuery]);
 
   const fetchPendingRequests = async () => {
     try {
@@ -306,7 +314,7 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
               </div>
             ) : (
               pendingRequests.map(req => (
-                <div key={req.id} className="chat-item">
+                <div key={req.id} className="chat-item" onClick={() => setProfileModal({ isOpen: true, userId: req.sender_id, isOwn: false })}>
                   <div className="avatar">
                     {req.sender_username[0].toUpperCase()}
                   </div>
@@ -314,7 +322,7 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
                     <div className="chat-name">{req.sender_username}</div>
                     <div className="chat-preview">wants to connect</div>
                   </div>
-                  <div className="chat-actions">
+                  <div className="chat-actions" onClick={e => e.stopPropagation()}>
                     <button onClick={() => respondToRequest(req.id, 'accepted', req.sender_id)} className="icon-btn success">
                       <Check size={18} />
                     </button>

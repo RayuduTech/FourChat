@@ -84,6 +84,10 @@ const ProfileModal = ({ isOpen, onClose, userId, isOwnProfile }) => {
       const req = res.data.find(r => r.sender_id === senderId);
       if (req) {
         await api.post('/friends/respond', { requestId: req.id, action: 'accepted' });
+        
+        // Trigger a global refresh so Sidebar and other components update
+        window.dispatchEvent(new CustomEvent('refreshFriendData'));
+        
         fetchProfile();
       }
     } catch (err) {

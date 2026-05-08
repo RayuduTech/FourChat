@@ -15,9 +15,20 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const messagesEndRef = useRef(null);
+  const messagesAreaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const menuRef = useRef(null);
   let typingTimeout = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const getBaseUrl = () => {
     return import.meta.env.VITE_API_URL.replace('/api', '');
@@ -32,7 +43,16 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
       socket.emit('join_room', chat.id);
 
       socket.on('receive_message', (message) => {
-        setMessages((prev) => [...prev, message]);
+        setMessages((prev) => {
+          // If this is our own message and we already have an optimistic version, replace/ignore
+          if (message.sender_id === user.id) {
+            const hasOptimistic = prev.some(m => m.isOptimistic && m.content === message.content);
+            if (hasOptimistic) {
+              return prev.map(m => (m.isOptimistic && m.content === message.content) ? message : m);
+            }
+          }
+          return [...prev, message];
+        });
       });
 
       socket.on('user_typing', ({ userId }) => {
@@ -67,7 +87,9 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesAreaRef.current) {
+      messagesAreaRef.current.scrollTop = messagesAreaRef.current.scrollHeight;
+    }
   };
 
   const handleTyping = (e) => {
@@ -114,10 +136,23 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   const sendMessage = (e) => {
     e.preventDefault();
     if (inputMessage.trim() && socket && canPost) {
-      socket.emit('send_message', {
+      const msgData = {
         chatId: chat.id,
         content: inputMessage,
-      });
+      };
+
+      // Optimistic Update: Add to UI immediately
+      const optimisticMessage = {
+        ...msgData,
+        sender_id: user.id,
+        sender_username: user.username,
+        created_at: new Date().toISOString(),
+        isOptimistic: true // Flag to identify and deduplicate
+      };
+      
+      setMessages((prev) => [...prev, optimisticMessage]);
+      
+      socket.emit('send_message', msgData);
       setInputMessage('');
       socket.emit('stop_typing', chat.id);
     }
@@ -128,7 +163,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
   return (
     <div className="chat-window">
       <div className="chat-header">
-        <div className="avatar" style={{ cursor: chat.is_group ? 'pointer' : 'default' }} onClick={() => chat.is_group && setShowInfoModal(true)}>
+        <div className="avatar" style={{ cursor: 'pointer' }} onClick={() => chat.is_group ? setShowInfoModal(true) : setShowProfileModal(true)}>
           {chat.is_group ? (
             chat.group_pic ? (
               <img src={`${getBaseUrl()}${chat.group_pic}`} alt="Group" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
@@ -139,7 +174,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
             ) : chat.other_username?.[0]?.toUpperCase()
           )}
         </div>
-        <div style={{ flex: 1, cursor: chat.is_group ? 'pointer' : 'default' }} onClick={() => chat.is_group && setShowInfoModal(true)}>
+        <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => chat.is_group ? setShowInfoModal(true) : setShowProfileModal(true)}>
           <h3 style={{ margin: 0, fontWeight: 600 }}>
             {chat.is_group ? chat.group_name : chat.other_username}
           </h3>
@@ -149,7 +184,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
             </span>
           )}
         </div>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={menuRef}>
           <button 
             style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
             onClick={() => setShowMenu(!showMenu)}
@@ -187,7 +222,7 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
         </div>
       </div>
 
-      <div className="messages-area">
+      <div className="messages-area" ref={messagesAreaRef}>
         {messages.map((msg, index) => {
           const isSent = msg.sender_id === user.id;
           return (
@@ -222,7 +257,6 @@ const ChatWindow = ({ chat, socket, onGroupDeleted, onGroupUpdated }) => {
             <span style={{ width: '6px', height: '6px', background: 'var(--text-muted)', borderRadius: '50%', animation: 'fadeIn 1s infinite 0.4s' }}></span>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       <div className="message-input-area">
