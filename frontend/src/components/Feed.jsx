@@ -23,52 +23,58 @@ const Feed = ({ socket, setProfileModal, selectedPostId, clearSelectedPostId }) 
     const [isExpanded, setIsExpanded] = useState(false);
     
     return (
-      <div className="comment-thread">
-        <div className="comment-item">
-          <div className="comment-item-container">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-              <strong 
-                style={{ cursor: 'pointer', color: 'var(--primary)' }}
-                onClick={() => setProfileModal({ isOpen: true, userId: comment.user_id, isOwn: comment.user_id === user.id })}
-              >
-                {comment.username}
-              </strong>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                {new Date(comment.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-            <span>{comment.content}</span>
-          </div>
-          <div className="comment-actions">
-            <button 
-              className={`comment-action-btn ${comment.is_liked ? 'active' : ''}`}
-              onClick={() => handleCommentLike(comment.id, postId)}
-            >
-              <Heart size={14} fill={comment.is_liked ? 'var(--danger)' : 'none'} /> {comment.like_count || 0}
-            </button>
-            <button 
-              className="comment-action-btn"
-              onClick={() => {
-                setReplyingTo({ id: comment.id, username: comment.username });
-                setCommentText(`@${comment.username} `);
-              }}
-            >
-              Reply
-            </button>
-            {replies.length > 0 && (
-              <button 
-                className="comment-action-btn"
-                onClick={() => setIsExpanded(!isExpanded)}
-                style={{ color: 'var(--primary)', fontWeight: '600' }}
-              >
-                {isExpanded ? 'Hide replies' : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
-              </button>
+      <div className="comment-item">
+        <div className="comment-item-container">
+          <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem', flexShrink: 0 }}>
+            {comment.profile_pic ? (
+              <img src={`${getBaseUrl()}${comment.profile_pic}`} alt="Avatar" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              comment.username[0].toUpperCase()
             )}
           </div>
+          <div className="comment-content-main">
+            <div className="comment-header">
+              <span className="username" style={{ fontWeight: '600', fontSize: '0.9rem', color: 'var(--text-main)', cursor: 'pointer' }} onClick={() => setProfileModal({ isOpen: true, userId: comment.user_id, isOwn: comment.user_id === user.id })}>{comment.username}</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{new Date(comment.created_at).toLocaleDateString()}</span>
+            </div>
+            <div className="comment-text" style={{ fontSize: '0.85rem', color: 'var(--text-main)', lineHeight: '1.4' }}>
+              {comment.content}
+            </div>
+            
+            <div className="comment-actions">
+              <button 
+                className={`comment-action-btn ${comment.is_liked ? 'active' : ''}`}
+                onClick={() => handleCommentLike(comment.id, postId)}
+              >
+                <Heart size={14} fill={comment.is_liked ? '#f43f5e' : 'none'} />
+                <span>{comment.like_count || 0}</span>
+              </button>
+              
+              <button 
+                className="comment-action-btn"
+                onClick={() => {
+                  setReplyingTo({ id: comment.id, username: comment.username });
+                  setCommentText(`@${comment.username} `);
+                }}
+              >
+                Reply
+              </button>
+
+              {replies.length > 0 && (
+                <button 
+                  className="comment-action-btn"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  style={{ color: 'var(--primary)', opacity: 1 }}
+                >
+                  {isExpanded ? 'Hide replies' : `View ${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}`}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        
+
         {isExpanded && replies.length > 0 && (
-          <div className="replies-list">
+          <div className="comment-thread">
             {replies.map(reply => (
               <CommentItem 
                 key={reply.id} 

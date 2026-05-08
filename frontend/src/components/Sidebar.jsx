@@ -10,7 +10,11 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
   const [searchResults, setSearchResults] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [friends, setFriends] = useState([]);
-  const [activeTab, setActiveTab] = useState('chats'); // 'chats', 'requests', 'friends' or 'feed'
+  const [activeTab, setActiveTab] = useState(localStorage.getItem('sidebar_active_tab') || 'chats');
+
+  useEffect(() => {
+    localStorage.setItem('sidebar_active_tab', activeTab);
+  }, [activeTab]);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [groupName, setGroupName] = useState('');
@@ -406,8 +410,7 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
             )}
           </>
         )}
-        </div>
-      )}
+      </div>
 
       {showGroupModal && (
         <div className="modal-overlay" onClick={() => setShowGroupModal(false)}>

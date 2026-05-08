@@ -11,7 +11,11 @@ import { Bell, LogOut } from 'lucide-react';
 
 const ChatDashboard = () => {
   const [currentChat, setCurrentChat] = useState(null);
-  const [view, setView] = useState('chat');
+  const [view, setView] = useState(localStorage.getItem('dashboard_view') || 'chat');
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_view', view);
+  }, [view]);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
