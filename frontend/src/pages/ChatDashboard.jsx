@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import ChatWindow from '../components/ChatWindow';
 import Feed from '../components/Feed';
@@ -25,6 +25,25 @@ const ChatDashboard = () => {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const notificationsRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        if (!event.target.closest('.bell-btn')) {
+          setShowNotifications(false);
+        }
+      }
+    };
+
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications]);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [profileModal, setProfileModal] = useState({ isOpen: false, userId: null, isOwn: false });
   const { token, user } = useAuth();
@@ -77,58 +96,75 @@ const ChatDashboard = () => {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('new_friend_request', (data) => {
+    const handleFriendRequest = (data) => {
       toast(`New friend request from ${data.sender.username}`, { icon: '👋', duration: 4000 });
       fetchNotifications();
-    });
+    };
 
-    socket.on('friend_request_accepted', (data) => {
+    const handleFriendAccepted = (data) => {
       toast(`${data.receiver.username} accepted your request!`, { icon: '✅', duration: 4000 });
       fetchNotifications();
-    });
+    };
 
-    socket.on('new_post_notification', (data) => {
+    const handleNewPost = (data) => {
       toast(`${data.sender} just shared a new post!`, { icon: '✨', duration: 4000 });
       fetchNotifications();
-    });
+    };
 
-    socket.on('post_like', (data) => {
+    const handlePostLike = (data) => {
       toast(`${data.likerName} liked your post!`, { icon: '❤️', duration: 4000 });
       fetchNotifications();
-    });
+    };
 
-    socket.on('post_comment', (data) => {
+    const handlePostComment = (data) => {
       toast(`${data.commenterName} commented on your post!`, { icon: '💬', duration: 4000 });
       fetchNotifications();
-    });
-    
-    socket.on('comment_reply', (data) => {
+    };
+
+    const handleCommentReply = (data) => {
       toast(`${data.commenterName} replied to your comment!`, { icon: '↪️', duration: 4000 });
       fetchNotifications();
-    });
+    };
+
+    socket.on('new_friend_request', handleFriendRequest);
+    socket.on('friend_request_accepted', handleFriendAccepted);
+    socket.on('new_post_notification', handleNewPost);
+    socket.on('post_like', handlePostLike);
+    socket.on('post_comment', handlePostComment);
+    socket.on('comment_reply', handleCommentReply);
 
     return () => {
-      socket.off('new_friend_request');
-      socket.off('friend_request_accepted');
-      socket.off('new_post_notification');
+      socket.off('new_friend_request', handleFriendRequest);
+      socket.off('friend_request_accepted', handleFriendAccepted);
+      socket.off('new_post_notification', handleNewPost);
+      socket.off('post_like', handlePostLike);
+      socket.off('post_comment', handlePostComment);
+      socket.off('comment_reply', handleCommentReply);
     };
   }, [socket]);
 
   useEffect(() => {
-    if (socket) {
-      socket.on('receive_message', (message) => {
-        if (currentChat?.id !== message.chat_id) {
-          setUnreadCounts(prev => ({
-            ...prev,
-            [message.chat_id]: (prev[message.chat_id] || 0) + 1
+    if (!socket) return;
+
+    const handleUnreadMessage = (message) => {
+      // Only track unread for chats NOT currently open
+      setCurrentChat(prev => {
+        if (!prev || prev.id !== message.chat_id) {
+          setUnreadCounts(counts => ({
+            ...counts,
+            [message.chat_id]: (counts[message.chat_id] || 0) + 1
           }));
         }
+        return prev;
       });
-    }
-    return () => {
-      if (socket) socket.off('receive_message');
     };
-  }, [socket, currentChat]);
+
+    socket.on('receive_message', handleUnreadMessage);
+
+    return () => {
+      socket.off('receive_message', handleUnreadMessage);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (currentChat) {
@@ -154,7 +190,7 @@ const ChatDashboard = () => {
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', height: '100%' }}>
         {showNotifications && (
-          <div className="notifications-dropdown glass-panel">
+          <div className="notifications-dropdown glass-panel" ref={notificationsRef}>
             <div className="dropdown-header">
               <h4>Notifications</h4>
               <button onClick={async () => {

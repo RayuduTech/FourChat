@@ -3,20 +3,21 @@ const db = require('../config/db');
 exports.getChats = async (req, res) => {
   try {
     const userId = req.user.id;
-    // Get all chats for the user
-    // For 1-on-1, we fetch the other participant's username
-    // For groups, we fetch the group name
+    // Get all chats for the user, ordered by the latest message timestamp
     const [chats] = await db.query(`
       SELECT 
         c.id, c.is_group, c.group_name, c.group_pic, c.created_at, c.anyone_can_post,
         u.username as other_username, u.status as other_status, u.id as other_user_id, u.profile_pic as other_profile_pic,
-        cp1.role as my_role
+        cp1.role as my_role,
+        MAX(m.created_at) as last_message_at
       FROM Chats c
       JOIN Chat_Participants cp1 ON c.id = cp1.chat_id
       LEFT JOIN Chat_Participants cp2 ON c.id = cp2.chat_id AND cp2.user_id != cp1.user_id AND c.is_group = false
       LEFT JOIN Users u ON cp2.user_id = u.id
+      LEFT JOIN Messages m ON c.id = m.chat_id
       WHERE cp1.user_id = ?
-      ORDER BY c.created_at DESC
+      GROUP BY c.id, u.id, cp1.role
+      ORDER BY COALESCE(last_message_at, c.created_at) DESC
     `, [userId]);
     
     res.json(chats);
@@ -230,7 +231,6 @@ exports.deleteGroup = async (req, res) => {
 exports.getMessages = async (req, res) => {
   const { chatId } = req.params;
   try {
-    // Basic authorization: check if user is in chat
     const [participant] = await db.query(
       'SELECT * FROM Chat_Participants WHERE chat_id = ? AND user_id = ?',
       [chatId, req.user.id]
@@ -238,13 +238,43 @@ exports.getMessages = async (req, res) => {
     if (participant.length === 0) return res.status(403).json({ error: 'Not a participant' });
 
     const [messages] = await db.query(`
-      SELECT m.*, u.username as sender_username 
+      SELECT m.*, u.username as sender_username,
+        rm.id as reply_original_id,
+        rm.content as reply_original_content,
+        rm.media_url as reply_original_media_url,
+        ru.username as reply_original_sender
       FROM Messages m 
       JOIN Users u ON m.sender_id = u.id 
+      LEFT JOIN Messages rm ON m.reply_to_message_id = rm.id
+      LEFT JOIN Users ru ON rm.sender_id = ru.id
       WHERE m.chat_id = ? 
       ORDER BY m.created_at ASC
     `, [chatId]);
     
+    // Initialize reactions array for each message
+    messages.forEach(msg => msg.reactions = []);
+
+    if (messages.length > 0) {
+      const messageIds = messages.map(m => m.id);
+      const [reactions] = await db.query(`
+        SELECT mr.message_id, mr.emoji, mr.user_id, u.username
+        FROM Message_Reactions mr
+        JOIN Users u ON mr.user_id = u.id
+        WHERE mr.message_id IN (?)
+      `, [messageIds]);
+
+      reactions.forEach(r => {
+        const msg = messages.find(m => m.id === r.message_id);
+        if (msg) {
+          msg.reactions.push({
+            user_id: r.user_id,
+            username: r.username,
+            emoji: r.emoji
+          });
+        }
+      });
+    }
+
     res.json(messages);
   } catch (error) {
     res.status(500).json({ error: error.message });

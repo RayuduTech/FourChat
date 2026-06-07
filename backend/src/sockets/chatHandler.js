@@ -47,21 +47,46 @@ module.exports = function(io) {
     socket.on('post_like', (data) => {
       const { postId, ownerId, likerName } = data;
       socket.to(`user_${ownerId}`).emit('post_like', { likerName, postId });
+      io.emit('feed_update', { type: 'like', postId });
     });
 
     socket.on('post_comment', (data) => {
       const { postId, ownerId, commenterName } = data;
       socket.to(`user_${ownerId}`).emit('post_comment', { commenterName, postId });
+      io.emit('feed_update', { type: 'comment', postId });
     });
 
     socket.on('comment_reply', (data) => {
       const { postId, ownerId, commenterName } = data;
       socket.to(`user_${ownerId}`).emit('comment_reply', { commenterName, postId });
+      io.emit('feed_update', { type: 'comment', postId });
     });
 
     socket.on('comment_like', (data) => {
       const { ownerId, likerName } = data;
       socket.to(`user_${ownerId}`).emit('comment_like', { likerName });
+      io.emit('feed_update', { type: 'comment_like' });
+    });
+
+    socket.on('new_group', (data) => {
+      const { chatId, memberIds } = data;
+      if (Array.isArray(memberIds)) {
+        memberIds.forEach(memberId => {
+          if (memberId !== socket.user.id) {
+            io.to(`user_${memberId}`).emit('added_to_group', { chatId });
+          }
+        });
+      }
+    });
+
+    socket.on('group_update', (data) => {
+      const { chatId, groupName, groupPic, anyoneCanPost } = data;
+      socket.to(chatId.toString()).emit('group_updated_realtime', { chatId, groupName, groupPic, anyoneCanPost });
+    });
+
+    socket.on('group_delete', (data) => {
+      const { chatId } = data;
+      socket.to(chatId.toString()).emit('group_deleted_realtime', { chatId });
     });
 
     socket.on('join_room', (chatId) => {
@@ -70,14 +95,38 @@ module.exports = function(io) {
     });
 
     socket.on('send_message', async (data) => {
-      const { chatId, content, media_url } = data;
+      const { chatId, content, media_url, replyToMessageId } = data;
       const senderId = socket.user.id;
       
+      // If replying, fetch the original message details
+      let replyData = null;
+      if (replyToMessageId) {
+        try {
+          const [rows] = await db.query(
+            `SELECT m.id, m.content, m.media_url, u.username as sender_username 
+             FROM Messages m JOIN Users u ON m.sender_id = u.id WHERE m.id = ?`,
+            [replyToMessageId]
+          );
+          if (rows.length > 0) {
+            replyData = {
+              reply_original_id: rows[0].id,
+              reply_original_content: rows[0].content,
+              reply_original_media_url: rows[0].media_url,
+              reply_original_sender: rows[0].sender_username
+            };
+          }
+        } catch (err) {
+          console.error('Error fetching reply target:', err);
+        }
+      }
+
       const newMessage = {
         chat_id: chatId,
         sender_id: senderId,
         content,
         media_url,
+        reply_to_message_id: replyToMessageId || null,
+        ...replyData,
         sender_username: socket.user.username,
         created_at: new Date(),
         eventType: 'SEND_MESSAGE'
@@ -94,20 +143,59 @@ module.exports = function(io) {
         });
       } catch (err) {
         console.error('Kafka Send Error (Falling back to direct DB):', err);
-        // Fallback for dev environment without Kafka
         await db.query(
-          'INSERT INTO Messages (chat_id, sender_id, content, media_url) VALUES (?, ?, ?, ?)',
-          [chatId, senderId, content, media_url]
+          'INSERT INTO Messages (chat_id, sender_id, content, media_url, reply_to_message_id) VALUES (?, ?, ?, ?, ?)',
+          [chatId, senderId, content, media_url, replyToMessageId || null]
         );
       }
     });
 
+    socket.on('toggle_reaction', async (data) => {
+      const { messageId, chatId, emoji } = data;
+      const userId = socket.user.id;
+      const username = socket.user.username;
+
+      try {
+        // Toggle in DB
+        const [existing] = await db.query(
+          'SELECT * FROM Message_Reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
+          [messageId, userId, emoji]
+        );
+
+        let action;
+        if (existing.length > 0) {
+          await db.query(
+            'DELETE FROM Message_Reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
+            [messageId, userId, emoji]
+          );
+          action = 'remove';
+        } else {
+          await db.query(
+            'INSERT INTO Message_Reactions (message_id, user_id, emoji) VALUES (?, ?, ?)',
+            [messageId, userId, emoji]
+          );
+          action = 'add';
+        }
+
+        // Broadcast reaction update to the chat room
+        io.to(chatId.toString()).emit('message_reaction_updated', {
+          messageId,
+          userId,
+          username,
+          emoji,
+          action
+        });
+      } catch (err) {
+        console.error('Error toggling message reaction:', err);
+      }
+    });
+
     socket.on('typing', (chatId) => {
-      socket.to(chatId.toString()).emit('user_typing', { userId: socket.user.id, chatId });
+      socket.to(chatId.toString()).emit('user_typing', { userId: socket.user.id, chatId: parseInt(chatId) });
     });
 
     socket.on('stop_typing', (chatId) => {
-      socket.to(chatId.toString()).emit('user_stopped_typing', { userId: socket.user.id, chatId });
+      socket.to(chatId.toString()).emit('user_stopped_typing', { userId: socket.user.id, chatId: parseInt(chatId) });
     });
 
     socket.on('disconnect', async () => {

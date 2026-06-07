@@ -99,11 +99,23 @@ const Feed = ({ socket, setProfileModal, selectedPostId, clearSelectedPostId }) 
 
   useEffect(() => {
     if (!socket) return;
+    
     socket.on('new_post_notification', () => {
       fetchPosts();
     });
-    return () => socket.off('new_post_notification');
-  }, [socket]);
+
+    socket.on('feed_update', (data) => {
+      fetchPosts();
+      if (data.type === 'comment' && commentingOn === data.postId) {
+        fetchComments(data.postId);
+      }
+    });
+
+    return () => {
+      socket.off('new_post_notification');
+      socket.off('feed_update');
+    };
+  }, [socket, commentingOn]);
 
   const fetchPosts = async () => {
     try {

@@ -37,21 +37,41 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('new_friend_request', (data) => {
-      fetchPendingRequests();
-      // Optional: notification
-    });
+    const handleNewFriendRequest = () => fetchPendingRequests();
 
-    socket.on('friend_request_accepted', (data) => {
+    const handleFriendAccepted = () => {
       fetchChats();
       fetchPendingRequests();
-    });
+      fetchFriends();
+    };
 
-    socket.on('friend_request_rejected', (data) => {
+    const handleFriendRejected = () => {
       fetchPendingRequests();
-      // Optionally refresh search if active
       if (searchQuery) handleSearch({ target: { value: searchQuery } });
-    });
+    };
+
+    const handleReceiveMessage = () => fetchChats();
+
+    const handleUserStatusChange = () => {
+      fetchFriends();
+      fetchChats();
+    };
+
+    const handleAddedToGroup = () => fetchChats();
+
+    const handleGroupUpdated = (data) => {
+      fetchChats();
+      if (currentChat && parseInt(currentChat.id) === parseInt(data.chatId)) {
+        setCurrentChat(prev => ({ ...prev, ...data }));
+      }
+    };
+
+    const handleGroupDeleted = (data) => {
+      fetchChats();
+      if (currentChat && parseInt(currentChat.id) === parseInt(data.chatId)) {
+        setCurrentChat(null);
+      }
+    };
 
     const handleGlobalRefresh = () => {
       fetchChats();
@@ -59,15 +79,29 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
       fetchFriends();
     };
 
+    socket.on('new_friend_request', handleNewFriendRequest);
+    socket.on('friend_request_accepted', handleFriendAccepted);
+    socket.on('friend_request_rejected', handleFriendRejected);
+    socket.on('receive_message', handleReceiveMessage);
+    socket.on('user_status_change', handleUserStatusChange);
+    socket.on('added_to_group', handleAddedToGroup);
+    socket.on('group_updated_realtime', handleGroupUpdated);
+    socket.on('group_deleted_realtime', handleGroupDeleted);
+
     window.addEventListener('refreshFriendData', handleGlobalRefresh);
 
     return () => {
-      socket.off('new_friend_request');
-      socket.off('friend_request_accepted');
-      socket.off('friend_request_rejected');
+      socket.off('new_friend_request', handleNewFriendRequest);
+      socket.off('friend_request_accepted', handleFriendAccepted);
+      socket.off('friend_request_rejected', handleFriendRejected);
+      socket.off('receive_message', handleReceiveMessage);
+      socket.off('user_status_change', handleUserStatusChange);
+      socket.off('added_to_group', handleAddedToGroup);
+      socket.off('group_updated_realtime', handleGroupUpdated);
+      socket.off('group_deleted_realtime', handleGroupDeleted);
       window.removeEventListener('refreshFriendData', handleGlobalRefresh);
     };
-  }, [socket, searchQuery]);
+  }, [socket, searchQuery, currentChat, setCurrentChat]);
 
   const fetchPendingRequests = async () => {
     try {
@@ -173,6 +207,9 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
       setCurrentChat(res.data);
       setActiveTab('chats');
       setView('chat');
+      if (socket) {
+        socket.emit('new_group', { chatId: res.data.id, memberIds: [...selectedMembers, user.id] });
+      }
     } catch (err) {
       console.error('Error creating group', err);
     }
@@ -202,7 +239,7 @@ const Sidebar = ({ currentChat, setCurrentChat, unreadCounts, socket, setView, c
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button className="icon-btn" onClick={onBellClick} style={{ position: 'relative' }}>
+          <button className="icon-btn bell-btn" onClick={onBellClick} style={{ position: 'relative' }}>
             <Bell size={20} />
             {notificationsCount > 0 && <span className="notification-badge">{notificationsCount}</span>}
           </button>

@@ -4,7 +4,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
-const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdated }) => {
+const GroupInfoModal = ({ isOpen, onClose, chatId, socket, onGroupDeleted, onGroupUpdated }) => {
   const { user } = useAuth();
   const [groupData, setGroupData] = useState(null);
   const [friends, setFriends] = useState([]);
@@ -68,6 +68,9 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       setGroupPicFile(null);
       fetchGroupInfo();
       if (onGroupUpdated) onGroupUpdated({ group_pic: res.data.group_pic });
+      if (socket) {
+        socket.emit('group_update', { chatId, groupPic: res.data.group_pic });
+      }
     } catch (err) {
       toast.error('Failed to update group picture');
     }
@@ -78,6 +81,9 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       await api.post(`/chats/${chatId}/members`, { memberIds: selectedNewMembers });
       toast.success('Members added!');
       setShowAddMembers(false);
+      if (socket && selectedNewMembers.length > 0) {
+        socket.emit('new_group', { chatId, memberIds: selectedNewMembers });
+      }
       setSelectedNewMembers([]);
       fetchGroupInfo();
     } catch (err) {
@@ -91,6 +97,9 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       toast.success(`Role updated to ${role}`);
       setMemberMenu(null);
       fetchGroupInfo();
+      if (socket) {
+        socket.emit('group_update', { chatId });
+      }
     } catch (err) {
       toast.error('Failed to update role');
     }
@@ -103,6 +112,10 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       toast.success('Member removed');
       setMemberMenu(null);
       fetchGroupInfo();
+      if (socket) {
+        socket.emit('group_update', { chatId });
+        socket.emit('new_group', { chatId, memberIds: [memberId] });
+      }
     } catch (err) {
       toast.error('Failed to remove member');
     }
@@ -113,6 +126,9 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
       await api.post(`/chats/${chatId}/permissions`, { anyoneCanPost: !groupData.anyone_can_post });
       toast.success('Permissions updated');
       fetchGroupInfo();
+      if (socket) {
+        socket.emit('group_update', { chatId, anyoneCanPost: !groupData.anyone_can_post });
+      }
     } catch (err) {
       toast.error('Failed to update permissions');
     }
@@ -126,6 +142,9 @@ const GroupInfoModal = ({ isOpen, onClose, chatId, onGroupDeleted, onGroupUpdate
     try {
       await api.delete(`/chats/${chatId}`);
       toast.success('Group deleted');
+      if (socket) {
+        socket.emit('group_delete', { chatId });
+      }
       onClose();
       if (onGroupDeleted) onGroupDeleted(chatId);
     } catch (err) {
